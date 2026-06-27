@@ -90,6 +90,29 @@ docker compose down
 docker compose down -v
 ```
 
+## Multi-Container Deployment
+
+The default compose file runs all Laravel processes (nginx, PHP-FPM, Horizon, Reverb) in a single container. For production deployments where you want to scale workers independently, use the multi-container variant:
+
+```bash
+docker compose -f docker-compose.multi.yml up -d
+```
+
+| Service | Container Role | Port | Notes |
+|---------|---------------|------|-------|
+| `web` | nginx + PHP-FPM | `80` | Runs migrations on start |
+| `horizon` | Queue worker | — | Processes face detection / clustering jobs |
+| `reverb` | WebSocket server | `8080` | Real-time progress updates |
+| `scheduler` | Cron scheduler | — | Runs Laravel's scheduled tasks |
+
+All four share the same image (`ghcr.io/kwasii1/face-pipeline-ui:latest`) with different `CONTAINER_ROLE` values. Infrastructure services (Postgres, Redis, face-pipeline) are identical to the all-in-one compose file and share the same named volumes.
+
+Scale Horizon workers horizontally if you need to process more photos concurrently:
+
+```bash
+docker compose -f docker-compose.multi.yml up -d --scale horizon=3
+```
+
 ## Persistent Data
 
 All data is stored in Docker volumes:

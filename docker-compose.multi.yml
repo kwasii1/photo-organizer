@@ -1,0 +1,183 @@
+x-app-env: &app-env
+  APP_NAME: ${APP_NAME:-Photo Organizer}
+  APP_ENV: ${APP_ENV:-production}
+  APP_KEY: ${APP_KEY}
+  APP_DEBUG: ${APP_DEBUG:-false}
+  APP_URL: ${APP_URL:-http://localhost}
+
+  DB_CONNECTION: ${DB_CONNECTION:-pgsql}
+  DB_HOST: ${DB_HOST:-postgres}
+  DB_PORT: ${DB_PORT:-5432}
+  DB_DATABASE: ${DB_DATABASE:-face_pipeline}
+  DB_USERNAME: ${DB_USERNAME:-postgres}
+  DB_PASSWORD: ${DB_PASSWORD:-password}
+
+  REDIS_HOST: ${REDIS_HOST:-redis}
+  REDIS_PORT: ${REDIS_PORT:-6379}
+  REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+  QUEUE_CONNECTION: ${QUEUE_CONNECTION:-redis}
+  BROADCAST_CONNECTION: ${BROADCAST_CONNECTION:-reverb}
+
+  REVERB_APP_ID: ${REVERB_APP_ID}
+  REVERB_APP_KEY: ${REVERB_APP_KEY}
+  REVERB_APP_SECRET: ${REVERB_APP_SECRET}
+  REVERB_HOST: ${REVERB_HOST:-localhost}
+  REVERB_PORT: ${REVERB_PORT:-8080}
+  REVERB_SCHEME: ${REVERB_SCHEME:-http}
+
+  FASTAPI_BASE_URL: ${FASTAPI_BASE_URL:-http://face-pipeline:8001}
+  SHARED_STORAGE_PATH: ${SHARED_STORAGE_PATH:-/shared-storage}
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg18
+    container_name: photo-organizer-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_DATABASE:-face_pipeline}
+      POSTGRES_USER: ${DB_USERNAME:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-password}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-postgres} -d ${DB_DATABASE:-face_pipeline}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:8-alpine
+    container_name: photo-organizer-redis
+    restart: unless-stopped
+    command: >
+      redis-server
+      --appendonly yes
+      ${REDIS_PASSWORD:+--requirepass ${REDIS_PASSWORD}}
+    volumes:
+      - redis_data:/data
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$${REDIS_PASSWORD:-}\" ping | grep -q PONG"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  face-pipeline:
+    image: ghcr.io/kwasii1/face-pipeline:latest
+    container_name: photo-organizer-pipeline
+    restart: unless-stopped
+    environment:
+      FACE_PIPELINE_DATABASE_URL: postgresql://${DB_USERNAME:-postgres}:${DB_PASSWORD:-password}@postgres:5432/${DB_DATABASE:-face_pipeline}
+      FACE_PIPELINE_INSIGHTFACE_MODEL_NAME: ${FACE_PIPELINE_INSIGHTFACE_MODEL_NAME:-buffalo_l}
+      FACE_PIPELINE_MIN_DETECTION_SCORE: ${FACE_PIPELINE_MIN_DETECTION_SCORE:-0.5}
+      FACE_PIPELINE_MIN_FACE_SIZE_PX: ${FACE_PIPELINE_MIN_FACE_SIZE_PX:-40}
+      FACE_PIPELINE_MIN_RELATIVE_FACE_SIZE: ${FACE_PIPELINE_MIN_RELATIVE_FACE_SIZE:-0.015}
+      FACE_PIPELINE_MATCH_CONFIDENCE_THRESHOLD: ${FACE_PIPELINE_MATCH_CONFIDENCE_THRESHOLD:-0.62}
+      FACE_PIPELINE_HDBSCAN_MIN_CLUSTER_SIZE: ${FACE_PIPELINE_HDBSCAN_MIN_CLUSTER_SIZE:-2}
+      FACE_PIPELINE_HDBSCAN_MIN_SAMPLES: ${FACE_PIPELINE_HDBSCAN_MIN_SAMPLES:-2}
+      FACE_PIPELINE_FACE_CROPS_DIR: ${FACE_PIPELINE_FACE_CROPS_DIR:-/shared-storage/face_crops}
+    volumes:
+      - shared_storage:/shared-storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # One-off init container: runs migrations once and exits.
+  # web / horizon / reverb / scheduler all wait on this completing
+  # successfully, so no service can touch the schema before it's ready.
+  migrate:
+    image: ghcr.io/kwasii1/face-pipeline-ui:latest
+    container_name: photo-organizer-migrate
+    environment:
+      <<: *app-env
+    entrypoint: ["php", "artisan", "migrate", "--force", "--no-interaction"]
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  web:
+    image: ghcr.io/kwasii1/face-pipeline-ui:latest
+    container_name: photo-organizer-web
+    restart: unless-stopped
+    environment:
+      <<: *app-env
+      CONTAINER_ROLE: web
+      RUN_MIGRATIONS: false
+    volumes:
+      - shared_storage:/shared-storage
+    ports:
+      - "80:80"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      face-pipeline:
+        condition: service_started
+
+  horizon:
+    image: ghcr.io/kwasii1/face-pipeline-ui:latest
+    container_name: photo-organizer-horizon
+    restart: unless-stopped
+    environment:
+      <<: *app-env
+      CONTAINER_ROLE: horizon
+      RUN_MIGRATIONS: false
+    volumes:
+      - shared_storage:/shared-storage
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      face-pipeline:
+        condition: service_started
+
+  reverb:
+    image: ghcr.io/kwasii1/face-pipeline-ui:latest
+    container_name: photo-organizer-reverb
+    restart: unless-stopped
+    environment:
+      <<: *app-env
+      CONTAINER_ROLE: reverb
+      RUN_MIGRATIONS: false
+    ports:
+      - "8080:8080"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  scheduler:
+    image: ghcr.io/kwasii1/face-pipeline-ui:latest
+    container_name: photo-organizer-scheduler
+    restart: unless-stopped
+    environment:
+      <<: *app-env
+      CONTAINER_ROLE: scheduler
+      RUN_MIGRATIONS: false
+    volumes:
+      - shared_storage:/shared-storage
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  redis_data:
+  shared_storage:
