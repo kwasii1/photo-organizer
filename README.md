@@ -131,9 +131,3 @@ To back up, use `docker compose cp` or mount the volumes to backup targets.
 docker compose pull
 docker compose up -d
 ```
-
-> **Upgrading from an older release running PostgreSQL 17 or earlier?** This version moves to `pgvector/pgvector:pg18`, which is a major version bump. Postgres will refuse to start against a data directory created by an older major version. Before pulling, either:
-> - `pg_dump` your data, switch to the new image with a fresh `postgres_data` volume, then restore, or
-> - Use `pg_upgrade` (consult the [Postgres upgrade docs](https://www.postgresql.org/docs/current/upgrading.html))
->
-> If you're starting fresh, no action needed.
