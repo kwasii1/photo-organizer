@@ -17,12 +17,12 @@ AI-powered photo organization — detect faces, cluster people, and manage photo
                      (photos/crops)   (queues/websockets)
 ```
 
-| Service | Image | Port |
-|---------|-------|------|
-| PostgreSQL + pgvector | `pgvector/pgvector:pg18` | `5432` (localhost only) |
-| Redis | `redis:8-alpine` | `6379` (localhost only) |
-| Face Pipeline (FastAPI) | `ghcr.io/kwasii1/face-pipeline:latest` | `8001` (internal) |
-| Face Pipeline UI (Laravel) | `ghcr.io/kwasii1/face-pipeline-ui:latest` | `80`, `8080` |
+| Service                    | Image                                     | Port                    |
+| -------------------------- | ----------------------------------------- | ----------------------- |
+| PostgreSQL + pgvector      | `pgvector/pgvector:pg18`                  | `5432` (localhost only) |
+| Redis                      | `redis:8-alpine`                          | `6379` (localhost only) |
+| Face Pipeline (FastAPI)    | `ghcr.io/kwasii1/face-pipeline:latest`    | `8001` (internal)       |
+| Face Pipeline UI (Laravel) | `ghcr.io/kwasii1/face-pipeline-ui:latest` | `80`, `8080`            |
 
 ## Prerequisites
 
@@ -54,19 +54,19 @@ Open `http://localhost` in your browser. The first startup may take a minute whi
 
 ## Environment Variables
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `DB_DATABASE` | `face_pipeline` | Database name |
-| `DB_USERNAME` | `postgres` | Database user |
-| `DB_PASSWORD` | `password` | Database password |
-| `APP_KEY` | — | Laravel encryption key (**required**) |
-| `APP_URL` | `http://localhost` | Public URL of the application |
-| `REVERB_APP_ID` | `843193` | Reverb application ID |
-| `REVERB_APP_KEY` | — | Reverb WebSocket key (**required**) |
-| `REVERB_APP_SECRET` | — | Reverb WebSocket secret (**required**) |
-| `FASTAPI_BASE_URL` | `http://face-pipeline:8001` | Face detection service URL |
-| `RUN_MIGRATIONS` | `true` | Auto-run database migrations on start |
-| `REDIS_PASSWORD` | — | Redis password (leave empty for none) |
+| Variable            | Default                     | Description                            |
+| ------------------- | --------------------------- | -------------------------------------- |
+| `DB_DATABASE`       | `face_pipeline`             | Database name                          |
+| `DB_USERNAME`       | `postgres`                  | Database user                          |
+| `DB_PASSWORD`       | `password`                  | Database password                      |
+| `APP_KEY`           | —                           | Laravel encryption key (**required**)  |
+| `APP_URL`           | `http://localhost`          | Public URL of the application          |
+| `REVERB_APP_ID`     | `843193`                    | Reverb application ID                  |
+| `REVERB_APP_KEY`    | —                           | Reverb WebSocket key (**required**)    |
+| `REVERB_APP_SECRET` | —                           | Reverb WebSocket secret (**required**) |
+| `FASTAPI_BASE_URL`  | `http://face-pipeline:8001` | Face detection service URL             |
+| `RUN_MIGRATIONS`    | `true`                      | Auto-run database migrations on start  |
+| `REDIS_PASSWORD`    | —                           | Redis password (leave empty for none)  |
 
 > `DB_DATABASE`, `DB_USERNAME`, and `DB_PASSWORD` are shared across the Postgres container, the FastAPI face-pipeline, and the Laravel app — set them once in `.env` and all three services pick them up consistently.
 
@@ -98,12 +98,22 @@ The default compose file runs all Laravel processes (nginx, PHP-FPM, Horizon, Re
 docker compose -f docker-compose.multi.yml up -d
 ```
 
-| Service | Container Role | Port | Notes |
-|---------|---------------|------|-------|
-| `web` | nginx + PHP-FPM | `80` | Runs migrations on start |
-| `horizon` | Queue worker | — | Processes face detection / clustering jobs |
-| `reverb` | WebSocket server | `8080` | Real-time progress updates |
-| `scheduler` | Cron scheduler | — | Runs Laravel's scheduled tasks |
+For the multi-container setup, make sure your `.env` contains the Reverb broadcast settings so the web container can reach the `reverb` service:
+
+```dotenv
+REVERB_BROADCAST_HOST=reverb
+REVERB_BROADCAST_PORT=8080
+REVERB_BROADCAST_SCHEME=http
+```
+
+If you copied `.env.example`, uncomment those lines or add them to `.env` before starting the stack.
+
+| Service     | Container Role   | Port   | Notes                                      |
+| ----------- | ---------------- | ------ | ------------------------------------------ |
+| `web`       | nginx + PHP-FPM  | `80`   | Runs migrations on start                   |
+| `horizon`   | Queue worker     | —      | Processes face detection / clustering jobs |
+| `reverb`    | WebSocket server | `8080` | Real-time progress updates                 |
+| `scheduler` | Cron scheduler   | —      | Runs Laravel's scheduled tasks             |
 
 All four share the same image (`ghcr.io/kwasii1/face-pipeline-ui:latest`) with different `CONTAINER_ROLE` values. Infrastructure services (Postgres, Redis, face-pipeline) are identical to the all-in-one compose file and share the same named volumes.
 
@@ -117,11 +127,11 @@ docker compose -f docker-compose.multi.yml up -d --scale horizon=3
 
 All data is stored in Docker volumes:
 
-| Volume | Contents |
-|--------|----------|
-| `postgres_data` | Database (schema, faces, projects, people) |
-| `redis_data` | Queue jobs and Reverb state |
-| `shared_storage` | Uploaded photos and generated face crops |
+| Volume           | Contents                                   |
+| ---------------- | ------------------------------------------ |
+| `postgres_data`  | Database (schema, faces, projects, people) |
+| `redis_data`     | Queue jobs and Reverb state                |
+| `shared_storage` | Uploaded photos and generated face crops   |
 
 To back up, use `docker compose cp` or mount the volumes to backup targets.
 
